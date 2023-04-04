@@ -146,8 +146,8 @@ if __name__ == "__main__":
     envs = gym.wrappers.TransformReward(envs, lambda reward: np.clip(reward, -10, 10))
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
 
-    # eval env setup : evaluate on full distribution of levels
-    if args.eval_freq > 0:
+    # eval env fn : evaluate on full distribution of levels
+    def build_eval_envs():
         envs_eval = ProcgenEnv(num_envs=args.num_envs, env_name=args.env_id, num_levels=0, start_level=0, distribution_mode="easy")
         envs_eval = gym.wrappers.TransformObservation(envs_eval, lambda obs: obs["rgb"])
         envs_eval.single_action_space = envs_eval.action_space
@@ -155,6 +155,8 @@ if __name__ == "__main__":
         envs_eval.is_vector_env = True
         envs_eval = gym.wrappers.RecordEpisodeStatistics(envs_eval)
         assert isinstance(envs_eval.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
+        return envs_eval
+    
 
     agent = AGENTS[args.agent](envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
@@ -202,13 +204,9 @@ if __name__ == "__main__":
 
             for item in info:
                 if "episode" in item.keys():
-                    # print global step, episodic return, episodic length - all in scientidic notation, padded.
-                    # print(f"global step: {global_step:10d}, episodic return: {item['episode']['r']:10.2f}, episodic length: {item['episode']['l']:10d}")
                     ep_returns_train.append(item["episode"]["r"])
                     ep_lengths_train.append(item["episode"]["l"])
-                    # writer.add_scalar("charts/episodic_return", item["episode"]["r"], global_step)
-                    # writer.add_scalar("charts/episodic_length", item["episode"]["l"], global_step)
-                    # break
+
         mean_return, std_return = np.mean(ep_returns_train), np.std(ep_returns_train)
         mean_length, std_length = np.mean(ep_lengths_train), np.std(ep_lengths_train)
 
@@ -226,6 +224,7 @@ if __name__ == "__main__":
 
             ep_returns_eval = []
             ep_lengths_eval = []
+            envs_eval = build_eval_envs() # discard the old envs_eval and build new ones
             next_obs_eval = torch.Tensor(envs_eval.reset()).to(device)
 
             while len(ep_returns_eval) < args.num_eval_eps:
