@@ -64,10 +64,14 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
 
         self.experts = nn.Sequential(
             nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=1024, kernel_size=4, stride=1),
+            nn.Conv2d(in_channels=32, out_channels=768, kernel_size=4, stride=1),
             nn.ReLU(),
-            nn.Conv2d(in_channels=1024, out_channels=self.num_outputs + 3, kernel_size=1, stride=1),
+            nn.Conv2d(in_channels=768, out_channels=self.num_outputs + 1, kernel_size=1, stride=1),
         )
+        
+        self.hidden_fc = nn.Linear(in_features=8*8*32, out_features=768)
+        self.value_fc = nn.Linear(in_features=768, out_features=1)
+
 
     def get_value(self, x):
         _, _, _, v, _ = self.get_action_and_value(x)
@@ -77,25 +81,21 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
         
         # embed state
         x = self.conv_seqs(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw"
-        x = self.experts(x)
-
+        
+        x_flat = x.flatten(1)
+        x_flat = self.hidden_fc(x_flat)
+        x_flat = nn.functional.relu(x_flat)
+        value = self.value_fc(x_flat)
+        
         # expert forward pass
+        x = self.experts(x)
         x = x.flatten(2)
         logits = x.narrow(1, 0, self.num_outputs)  # N x A X self.num_actors
-        value = x.narrow(1, self.num_outputs, 1)  # N x 1 X self.num_actors
-        weights_logits = x.narrow(1, self.num_outputs + 1, 1)  # N x 1 X self.num_actors
-        weights_value = x.narrow(1, self.num_outputs + 2, 1)  # N x 1 X self.num_actors
-
-        weights_logits = torch.sigmoid(weights_logits).mul(2.0) # Multiply by 2 so that the default weighting is 1.
-        weights_value = torch.sigmoid(weights_value).mul(2.0) # Multiply by 2 so that the default weighting is 1.
-        
-        # normalize weights
-        #weights_logits = nn.functional.softmax(weights_logits, dim=2)
-        #weights_value = nn.functional.softmax(weights_value, dim=2)
+        weights_logits = x.narrow(1, self.num_outputs, 1)  # N x 1 X self.num_actors
+        weights_logits = torch.sigmoid(weights_logits).mul(0.5) # If multiplied by 2, the default weighting is 1. But think we should divide by sqrt(actors), or something just under. Kinda guessing that this might be ok.
 
         # weighted sum
         final_logits = logits.mul(weights_logits).sum(2)
-        value = value.mul(weights_value).sum(2)
 
         probs = Categorical(logits=final_logits)
         if action is None:
