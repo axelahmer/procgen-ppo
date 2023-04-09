@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.distributions.categorical import Categorical
+from prettytable import PrettyTable
 import numpy as np
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
@@ -46,8 +47,6 @@ class ConvSequence(nn.Module):
         return (self._out_channels, (h + 1) // 2, (w + 1) // 2)
     
 
-
-
 class MixerAgentSigmoidIndividualEntropy(nn.Module):
     def __init__(self, envs):
         super().__init__()
@@ -64,13 +63,15 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
 
         self.experts = nn.Sequential(
             nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=768, kernel_size=4, stride=1),
+            nn.Conv2d(in_channels=32, out_channels=504, kernel_size=4, stride=1),
             nn.ReLU(),
-            nn.Conv2d(in_channels=768, out_channels=self.num_outputs + 1, kernel_size=1, stride=1),
+            nn.Conv2d(in_channels=504, out_channels=self.num_outputs + 1, kernel_size=1, stride=1),
         )
         
-        self.hidden_fc = nn.Linear(in_features=8*8*32, out_features=768)
-        self.value_fc = nn.Linear(in_features=768, out_features=1)
+        self.hidden_fc = nn.Linear(in_features=8*8*32, out_features=126)
+        self.value_fc = nn.Linear(in_features=126, out_features=1)
+        
+        self.count_parameters()
 
 
     def get_value(self, x):
@@ -102,3 +103,106 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
             action = probs.sample()
 
         return action, probs.log_prob(action), probs.entropy(), value, logits
+        
+    def count_parameters(self):
+        table = PrettyTable(["Modules", "Parameters"])
+        total_params = 0
+        for name, parameter in self.named_parameters():
+            if not parameter.requires_grad: continue
+            param = parameter.numel()
+            table.add_row([name, param])
+            total_params+=param
+        print(table)
+        print(f"Total Trainable Params: {total_params}")
+        return total_params
+        
+
+#+-------------------------------------+------------+
+#|               Modules               | Parameters |
+#+-------------------------------------+------------+
+#|       conv_seqs.0.conv.weight       |    432     |
+#|        conv_seqs.0.conv.bias        |     16     |
+#| conv_seqs.0.res_block0.conv0.weight |    2304    |
+#|  conv_seqs.0.res_block0.conv0.bias  |     16     |
+#| conv_seqs.0.res_block0.conv1.weight |    2304    |
+#|  conv_seqs.0.res_block0.conv1.bias  |     16     |
+#| conv_seqs.0.res_block1.conv0.weight |    2304    |
+#|  conv_seqs.0.res_block1.conv0.bias  |     16     |
+#| conv_seqs.0.res_block1.conv1.weight |    2304    |
+#|  conv_seqs.0.res_block1.conv1.bias  |     16     |
+#|       conv_seqs.1.conv.weight       |    4608    |
+#|        conv_seqs.1.conv.bias        |     32     |
+#| conv_seqs.1.res_block0.conv0.weight |    9216    |
+#|  conv_seqs.1.res_block0.conv0.bias  |     32     |
+#| conv_seqs.1.res_block0.conv1.weight |    9216    |
+#|  conv_seqs.1.res_block0.conv1.bias  |     32     |
+#| conv_seqs.1.res_block1.conv0.weight |    9216    |
+#|  conv_seqs.1.res_block1.conv0.bias  |     32     |
+#| conv_seqs.1.res_block1.conv1.weight |    9216    |
+#|  conv_seqs.1.res_block1.conv1.bias  |     32     |
+#|       conv_seqs.2.conv.weight       |    9216    |
+#|        conv_seqs.2.conv.bias        |     32     |
+#| conv_seqs.2.res_block0.conv0.weight |    9216    |
+#|  conv_seqs.2.res_block0.conv0.bias  |     32     |
+#| conv_seqs.2.res_block0.conv1.weight |    9216    |
+#|  conv_seqs.2.res_block0.conv1.bias  |     32     |
+#| conv_seqs.2.res_block1.conv0.weight |    9216    |
+#|  conv_seqs.2.res_block1.conv0.bias  |     32     |
+#| conv_seqs.2.res_block1.conv1.weight |    9216    |
+#|  conv_seqs.2.res_block1.conv1.bias  |     32     |
+#|           experts.1.weight          |   258048   |
+#|            experts.1.bias           |    504     |
+#|           experts.3.weight          |    8064    |
+#|            experts.3.bias           |     16     |
+#|           hidden_fc.weight          |   258048   |
+#|            hidden_fc.bias           |    126     |
+#|           value_fc.weight           |    126     |
+#|            value_fc.bias            |     1      |
+#+-------------------------------------+------------+
+
+
+# If value part has 768 latent size:
+#+-------------------------------------+------------+
+#|               Modules               | Parameters |
+#+-------------------------------------+------------+
+#|       conv_seqs.0.conv.weight       |    432     |
+#|        conv_seqs.0.conv.bias        |     16     |
+#| conv_seqs.0.res_block0.conv0.weight |    2304    |
+#|  conv_seqs.0.res_block0.conv0.bias  |     16     |
+#| conv_seqs.0.res_block0.conv1.weight |    2304    |
+#|  conv_seqs.0.res_block0.conv1.bias  |     16     |
+#| conv_seqs.0.res_block1.conv0.weight |    2304    |
+#|  conv_seqs.0.res_block1.conv0.bias  |     16     |
+#| conv_seqs.0.res_block1.conv1.weight |    2304    |
+#|  conv_seqs.0.res_block1.conv1.bias  |     16     |
+#|       conv_seqs.1.conv.weight       |    4608    |
+#|        conv_seqs.1.conv.bias        |     32     |
+#| conv_seqs.1.res_block0.conv0.weight |    9216    |
+#|  conv_seqs.1.res_block0.conv0.bias  |     32     |
+#| conv_seqs.1.res_block0.conv1.weight |    9216    |
+#|  conv_seqs.1.res_block0.conv1.bias  |     32     |
+#| conv_seqs.1.res_block1.conv0.weight |    9216    |
+#|  conv_seqs.1.res_block1.conv0.bias  |     32     |
+#| conv_seqs.1.res_block1.conv1.weight |    9216    |
+#|  conv_seqs.1.res_block1.conv1.bias  |     32     |
+#|       conv_seqs.2.conv.weight       |    9216    |
+#|        conv_seqs.2.conv.bias        |     32     |
+#| conv_seqs.2.res_block0.conv0.weight |    9216    |
+#|  conv_seqs.2.res_block0.conv0.bias  |     32     |
+#| conv_seqs.2.res_block0.conv1.weight |    9216    |
+#|  conv_seqs.2.res_block0.conv1.bias  |     32     |
+#| conv_seqs.2.res_block1.conv0.weight |    9216    |
+#|  conv_seqs.2.res_block1.conv0.bias  |     32     |
+#| conv_seqs.2.res_block1.conv1.weight |    9216    |
+#|  conv_seqs.2.res_block1.conv1.bias  |     32     |
+#|           experts.1.weight          |   393216   |
+#|            experts.1.bias           |    768     |
+#|           experts.3.weight          |   12288    |
+#|            experts.3.bias           |     16     |
+#|           hidden_fc.weight          |  1572864   |
+#|            hidden_fc.bias           |    768     |
+#|           value_fc.weight           |    768     |
+#|            value_fc.bias            |     1      |
+#+-------------------------------------+------------+
+#Total Trainable Params: 2078289
+

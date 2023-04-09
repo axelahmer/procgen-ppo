@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.distributions.categorical import Categorical
+from prettytable import PrettyTable
 import numpy as np
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
@@ -65,6 +66,8 @@ class ImpalaAgent(nn.Module):
         self.network = nn.Sequential(*conv_seqs)
         self.actor = layer_init(nn.Linear(256, envs.single_action_space.n), std=0.01)
         self.critic = layer_init(nn.Linear(256, 1), std=1)
+        
+        self.count_parameters() 
 
     def get_value(self, x):
         return self.critic(self.network(x.permute((0, 3, 1, 2)) / 255.0))  # "bhwc" -> "bchw"
@@ -76,3 +79,58 @@ class ImpalaAgent(nn.Module):
         if action is None:
             action = probs.sample()
         return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
+        
+    def count_parameters(self):
+        table = PrettyTable(["Modules", "Parameters"])
+        total_params = 0
+        for name, parameter in self.named_parameters():
+            if not parameter.requires_grad: continue
+            param = parameter.numel()
+            table.add_row([name, param])
+            total_params+=param
+        print(table)
+        print(f"Total Trainable Params: {total_params}")
+        return total_params
+
+#+-----------------------------------+------------+
+#|              Modules              | Parameters |
+#+-----------------------------------+------------+
+#|       network.0.conv.weight       |    432     |
+#|        network.0.conv.bias        |     16     |
+#| network.0.res_block0.conv0.weight |    2304    |
+#|  network.0.res_block0.conv0.bias  |     16     |
+#| network.0.res_block0.conv1.weight |    2304    |
+#|  network.0.res_block0.conv1.bias  |     16     |
+#| network.0.res_block1.conv0.weight |    2304    |
+#|  network.0.res_block1.conv0.bias  |     16     |
+#| network.0.res_block1.conv1.weight |    2304    |
+#|  network.0.res_block1.conv1.bias  |     16     |
+#|       network.1.conv.weight       |    4608    |
+#|        network.1.conv.bias        |     32     |
+#| network.1.res_block0.conv0.weight |    9216    |
+#|  network.1.res_block0.conv0.bias  |     32     |
+#| network.1.res_block0.conv1.weight |    9216    |
+#|  network.1.res_block0.conv1.bias  |     32     |
+#| network.1.res_block1.conv0.weight |    9216    |
+#|  network.1.res_block1.conv0.bias  |     32     |
+#| network.1.res_block1.conv1.weight |    9216    |
+#|  network.1.res_block1.conv1.bias  |     32     |
+#|       network.2.conv.weight       |    9216    |
+#|        network.2.conv.bias        |     32     |
+#| network.2.res_block0.conv0.weight |    9216    |
+#|  network.2.res_block0.conv0.bias  |     32     |
+#| network.2.res_block0.conv1.weight |    9216    |
+#|  network.2.res_block0.conv1.bias  |     32     |
+#| network.2.res_block1.conv0.weight |    9216    |
+#|  network.2.res_block1.conv0.bias  |     32     |
+#| network.2.res_block1.conv1.weight |    9216    |
+#|  network.2.res_block1.conv1.bias  |     32     |
+#|          network.5.weight         |   524288   |
+#|           network.5.bias          |    256     |
+#|            actor.weight           |    3840    |
+#|             actor.bias            |     15     |
+#|           critic.weight           |    256     |
+#|            critic.bias            |     1      |
+#+-----------------------------------+------------+
+#Total Trainable Params: 626256
+
