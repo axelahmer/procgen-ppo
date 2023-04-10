@@ -17,6 +17,8 @@ parser.add_argument('--env-ids', type=str, nargs='+', default=default_env_ids,
                     help='List of environment IDs to use')
 parser.add_argument('--agents', type=str, nargs='+', default=['impala'],
                     help='List of agents to use')
+parser.add_argument("--ent-coef", type=float, default=0.01,
+                    help="coefficient of the entropy")
 parser.add_argument('--exp-name', type=str, required=True,
                     help='Name of the experiment')
 
@@ -27,13 +29,14 @@ gpu_ids = args.gpu_ids
 seeds = args.seeds
 env_ids = args.env_ids
 agents = args.agents
+ent_coef = args.ent_coef
 exp_name = args.exp_name
 
 
 # Function to run ppo_procgen.py with the supplied flags and specified GPU
 def run_ppo_procgen(args):
     seed, env_id, agent, name, gpu_id = args
-    cmd = f"python ppo_procgen.py --seed {seed} --env-id {env_id} --agent {agent} --exp-name {name} --gpu-id {gpu_id}"
+    cmd = f"python ppo_procgen.py --seed {seed} --env-id {env_id} --agent {agent} --exp-name {name} --gpu-id {gpu_id} --ent-coef {ent_coef}"
     subprocess.run(cmd, shell=True)
 
 # Create combinations of seeds and environment IDs

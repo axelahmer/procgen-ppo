@@ -75,7 +75,7 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
 
 
     def get_value(self, x):
-        _, _, _, v, _ = self.get_action_and_value(x)
+        _, _, _, v = self.get_action_and_value(x)
         return v
     
     def get_action_and_value(self, x, action=None):
@@ -96,13 +96,15 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
         weights_logits = torch.sigmoid(weights_logits).mul(0.5) # If multiplied by 2, the default weighting is 1. But think we should divide by sqrt(actors), or something just under. Kinda guessing that this might be ok.
 
         # weighted sum
-        final_logits = logits.mul(weights_logits).sum(2)
-
-        probs = Categorical(logits=final_logits)
+        logits_weights_detached = logits.mul(weights_logits.detach()).sum(2)
+        logits = logits.mul(weights_logits).sum(2)
+        
+        probs_weights_detached = Categorical(logits=logits_weights_detached)
+        probs = Categorical(logits=logits)
         if action is None:
             action = probs.sample()
 
-        return action, probs.log_prob(action), probs.entropy(), value, logits
+        return action, probs.log_prob(action), probs_weights_detached.entropy(), value
         
     def count_parameters(self):
         table = PrettyTable(["Modules", "Parameters"])
@@ -159,6 +161,7 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
 #|           value_fc.weight           |    126     |
 #|            value_fc.bias            |     1      |
 #+-------------------------------------+------------+
+#Total Trainable Params: 622533
 
 
 # If value part has 768 latent size:
