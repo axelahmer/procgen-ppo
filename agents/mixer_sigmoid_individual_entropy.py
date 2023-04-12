@@ -61,25 +61,18 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
             conv_seqs.append(conv_seq)
         self.conv_seqs = nn.Sequential(*conv_seqs)
 
-        self.experts_1 = nn.Conv2d(in_channels=32, out_channels=504, kernel_size=4, stride=1)
-        self.experts_2 = nn.Conv2d(in_channels=504, out_channels=self.num_outputs+1, kernel_size=1, stride=1)
+        self.experts = nn.Sequential(
+            nn.ReLU(),
+            nn.Conv2d(in_channels=32, out_channels=204, kernel_size=4, stride=1),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=204, out_channels=self.num_outputs + 1, kernel_size=1, stride=1),
+        )
         
-        self.hidden_fc = nn.Linear(in_features=8*8*32, out_features=126)
-        self.value_fc = nn.Linear(in_features=126, out_features=1)
+        self.hidden_fc = nn.Linear(in_features=8*8*32, out_features=204)
+        self.value_fc = nn.Linear(in_features=204, out_features=1)
         
         self.count_parameters()
-        
-        self_dict = self.state_dict()
-        conv_weights = self_dict['experts_2.weight']
-        conv_bias = self_dict['experts_2.bias']
-        
-        new_weight_expert_2a = self.experts_2.weight.mul(0.01)
-        new_bias_expert_2a = self.experts_2.bias.mul(0.01)
-        
-        self_dict['experts_2.weight'] = new_weight_expert_2a
-        self_dict['experts_2.bias'] = new_bias_expert_2a
-        
-        self.load_state_dict(self_dict)
+
 
     def get_value(self, x):
         _, _, _, v = self.get_action_and_value(x)
@@ -97,10 +90,7 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
         value = self.value_fc(x_flat)
         
         # expert forward pass
-        x = nn.functional.relu(x)
-        x = self.experts_1(x)
-        x = nn.functional.relu(x)
-        x = self.experts_2(x)
+        x = self.experts(x)
         x = x.flatten(2)
         logits = x.narrow(1, 0, self.num_outputs)  # N x A X self.num_actors
         weights_logits = x.narrow(1, self.num_outputs, 1)  # N x 1 X self.num_actors
