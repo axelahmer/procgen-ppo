@@ -83,7 +83,8 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
         # embed state
         x = self.conv_seqs(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw"
         
-        x_flat = x.flatten(1)
+        x_flat = nn.functional.relu(x)
+        x_flat = x_flat.flatten(1)
         x_flat = self.hidden_fc(x_flat)
         x_flat = nn.functional.relu(x_flat)
         value = self.value_fc(x_flat)
