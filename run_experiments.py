@@ -19,6 +19,8 @@ parser.add_argument('--agents', type=str, nargs='+', default=['impala'],
                     help='List of agents to use')
 parser.add_argument('--exp-name', type=str, required=True,
                     help='Name of the experiment')
+parser.add_argument('--track', type=str, choices=['gen', 'eff'], required=True,
+                    help='Track to run on: gen (generalization) or eff (efficiency)')
 
 # Parse the arguments
 args = parser.parse_args()
@@ -28,12 +30,15 @@ seeds = args.seeds
 env_ids = args.env_ids
 agents = args.agents
 exp_name = args.exp_name
+track = args.track
 
+# Set eval_freq based on the track value
+eval_freq = 16 if track == 'gen' else 0
 
 # Function to run ppo_procgen.py with the supplied flags and specified GPU
 def run_ppo_procgen(args):
-    seed, env_id, agent, name, gpu_id = args
-    cmd = f"python ppo_procgen.py --seed {seed} --env-id {env_id} --agent {agent} --exp-name {name} --gpu-id {gpu_id}"
+    seed, env_id, agent, name, gpu_id, eval_freq = args
+    cmd = f"python ppo_procgen.py --seed {seed} --env-id {env_id} --agent {agent} --exp-name {name} --gpu-id {gpu_id} --eval-freq {eval_freq}"
     subprocess.run(cmd, shell=True)
 
 # Create combinations of seeds and environment IDs
@@ -42,7 +47,7 @@ combinations = list(product(seeds, env_ids, agents, [exp_name]))
 # divide the combinations into queues, one for each GPU, and add the GPU ID to each combination
 queues = [list() for _ in gpu_ids]
 for i, combination in enumerate(combinations):
-    queues[i % len(gpu_ids)].append(combination + (gpu_ids[i % len(gpu_ids)],))
+    queues[i % len(gpu_ids)].append(combination + (gpu_ids[i % len(gpu_ids)], eval_freq))
 
 def run_gpu_queue(queue):
     for args in queue:

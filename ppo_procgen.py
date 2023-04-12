@@ -132,6 +132,7 @@ if __name__ == "__main__":
     
     # env setup
     num_levels_train = 200 if args.eval_freq > 0 else 0
+    print(f"num_levels_train: {num_levels_train}")
     envs = ProcgenEnv(num_envs=args.num_envs, env_name=args.env_id, num_levels=num_levels_train, start_level=0, distribution_mode="easy")
     envs = gym.wrappers.TransformObservation(envs, lambda obs: obs["rgb"])
     envs.single_action_space = envs.action_space
@@ -159,6 +160,8 @@ if __name__ == "__main__":
     
 
     agent = AGENTS[args.agent](envs).to(device)
+    print(f'using agent type: {AGENTS[args.agent]}')
+    
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
