@@ -61,23 +61,23 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
             conv_seqs.append(conv_seq)
         self.conv_seqs = nn.Sequential(*conv_seqs)
 
-        self.experts_1 = nn.Conv2d(in_channels=32, out_channels=504, kernel_size=4, stride=1)
-        self.experts_2 = nn.Conv2d(in_channels=504, out_channels=self.num_outputs + 1, kernel_size=1, stride=1)
+        self.experts_1 = nn.Conv2d(in_channels=32, out_channels=204, kernel_size=4, stride=1)
+        self.experts_2 = nn.Conv2d(in_channels=204, out_channels=self.num_outputs + 1, kernel_size=1, stride=1)
         
         self.hidden_fc = nn.Linear(in_features=8*8*32, out_features=204)
         self.value_fc = nn.Linear(in_features=204, out_features=1)
         
         self.count_parameters()
         
-        self_dict = self.state_dict()
+        #self_dict = self.state_dict()
         
-        new_weight_expert_2 = self.experts_2.weight.mul(0.01)
-        new_bias_expert_2 = self.experts_2.bias.mul(0.01)
+        #new_weight_expert_2 = self.experts_2.weight.mul(0.01)
+        #new_bias_expert_2 = self.experts_2.bias.mul(0.01)
         
-        self_dict['experts_2.weight'] = new_weight_expert_2
-        self_dict['experts_2.bias'] = new_bias_expert_2
+        #self_dict['experts_2.weight'] = new_weight_expert_2
+        #self_dict['experts_2.bias'] = new_bias_expert_2
         
-        self.load_state_dict(self_dict)
+        #self.load_state_dict(self_dict)
 
 
     def get_value(self, x):
@@ -103,7 +103,7 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
         x = x.flatten(2)
         logits = x.narrow(1, 0, self.num_outputs)  # N x A X self.num_actors
         weights_logits = x.narrow(1, self.num_outputs, 1)  # N x 1 X self.num_actors
-        weights_logits = torch.sigmoid(weights_logits).mul(2.0) #.mul(0.5) # TODO: Figure out if any adjustment factor is needed here.
+        weights_logits = torch.sigmoid(weights_logits) #.mul(2.0) #.mul(0.5) # TODO: Figure out if any adjustment factor is needed here.
 
         # weighted sum
         logits_weights_detached = logits.mul(weights_logits.detach()).sum(2)
