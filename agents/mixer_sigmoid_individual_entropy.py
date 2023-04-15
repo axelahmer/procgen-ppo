@@ -63,19 +63,11 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
             conv_seqs.append(conv_seq)
         self.conv_seqs = nn.Sequential(*conv_seqs)
 
-        self.experts_pol = nn.Sequential(
-            nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=312, kernel_size=4, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=312, out_channels=self.num_outputs + 1, kernel_size=1, stride=1),
-        )
+        self.experts_pol_1 = nn.Conv2d(in_channels=32, out_channels=768, kernel_size=4, stride=1)
+        self.experts_pol_2 = nn.Conv2d(in_channels=768, out_channels=self.num_outputs + 1, kernel_size=1, stride=1)
         
-        self.experts_val = nn.Sequential(
-            nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=312, kernel_size=6, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=312, out_channels=2, kernel_size=1, stride=1),
-        )
+        self.experts_val = nn.Linear(in_features=768*5*5, out_features=1)
+        
         self.count_parameters()
 
     def get_value(self, x):
@@ -87,24 +79,25 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
         # embed state
         x = self.conv_seqs(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw"
         
-        x_val = self.experts_val(x)
-        x_val = x_val.flatten(2)
-        value = x_val.narrow(1, 0, 1)  # N x 1 X self.num_actors
-        weights_value = x_val.narrow(1, 1, 1)  # N x 1 X self.num_actors
-        
         # expert forward pass
-        x = self.experts_pol(x)
+        x = nn.functional.relu(x)
+        x = self.experts_pol_1(x)
+        x = nn.functional.relu(x)
+        
+        x_val = x.flatten(2).flatten(1)
+        value = self.experts_val(x_val)
+        
+        x = self.experts_pol_2(x)
+        
         x = x.flatten(2)
         logits = x.narrow(1, 0, self.num_outputs)  # N x A X self.num_actors
         weights_logits = x.narrow(1, self.num_outputs, 1)  # N x 1 X self.num_actors
 
         weights_logits = nn.functional.softmax(weights_logits, dim=2)
-        weights_value = nn.functional.softmax(weights_value, dim=2)
 
         # weighted sum
         logits_weights_detached = logits.mul(weights_logits.detach()).sum(2)
         logits = logits.mul(weights_logits).sum(2)
-        value = value.mul(weights_value).sum(2)
         
         probs_weights_detached = Categorical(logits=logits_weights_detached)
         probs = Categorical(logits=logits)
