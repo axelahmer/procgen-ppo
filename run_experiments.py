@@ -17,6 +17,8 @@ parser.add_argument('--env-ids', type=str, nargs='+', default=default_env_ids,
                     help='List of environment IDs to use')
 parser.add_argument('--agents', type=str, nargs='+', default=['impala'],
                     help='List of agents to use')
+parser.add_argument("--ent-coef", type=float, default=0.01,
+                    help="coefficient of the entropy")
 parser.add_argument('--exp-name', type=str, required=True,
                     help='Name of the experiment')
 
