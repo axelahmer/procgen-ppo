@@ -79,7 +79,7 @@ def parse_args():
         help="the surrogate clipping coefficient")
     parser.add_argument("--clip-vloss", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Toggles whether or not to use a clipped loss for the value function, as per the paper.")
-    parser.add_argument("--ent-coef", type=float, default=0.01,
+    parser.add_argument("--ent-coef", type=float, default=0.005,
         help="coefficient of the entropy")
     parser.add_argument("--vf-coef", type=float, default=0.5,
         help="coefficient of the value function")
@@ -196,7 +196,7 @@ if __name__ == "__main__":
 
             # ALGO LOGIC: action logic
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_obs)
+                action, logprob, _, value, logprob_individual = agent.get_action_and_value(next_obs)
                 values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
@@ -233,7 +233,7 @@ if __name__ == "__main__":
 
             while len(ep_returns_eval) < args.num_eval_eps:
                 with torch.no_grad():
-                    action, _, _, _ = agent.get_action_and_value(next_obs_eval)
+                    action, _, _, _, _ = agent.get_action_and_value(next_obs_eval)
                 next_obs_eval, reward, done, info = envs_eval.step(action.cpu().numpy())
                 next_obs_eval = torch.Tensor(next_obs_eval).to(device)
                 for item in info:
@@ -286,7 +286,9 @@ if __name__ == "__main__":
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
 
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
+                _, newlogprob, entropy_overall, newvalue, logprob_individual = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
+                probs = Categorical(logits=logprob_individual.permute(0, 2, 1))
+                entropy = probs.entropy().mean(dim=1)
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 

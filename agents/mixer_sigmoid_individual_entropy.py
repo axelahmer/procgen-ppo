@@ -47,8 +47,6 @@ class ConvSequence(nn.Module):
         return (self._out_channels, (h + 1) // 2, (w + 1) // 2)
     
 
-
-
 class MixerAgentSigmoidIndividualEntropy(nn.Module):
     def __init__(self, envs):
         super().__init__()
@@ -63,15 +61,21 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
             conv_seqs.append(conv_seq)
         self.conv_seqs = nn.Sequential(*conv_seqs)
 
-        self.experts_pol_1 = nn.Conv2d(in_channels=32, out_channels=768, kernel_size=4, stride=1)
-        self.experts_pol_2 = nn.Conv2d(in_channels=768, out_channels=self.num_outputs + 1, kernel_size=1, stride=1)
+        self.experts = nn.Sequential(
+            nn.ReLU(),
+            nn.Conv2d(in_channels=32, out_channels=504, kernel_size=4, stride=1),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=504, out_channels=self.num_outputs + 1, kernel_size=1, stride=1),
+        )
         
-        self.experts_val = nn.Linear(in_features=768*5*5, out_features=1)
+        self.hidden_fc = nn.Linear(in_features=8*8*32, out_features=126)
+        self.value_fc = nn.Linear(in_features=126, out_features=1)
         
         self.count_parameters()
 
+
     def get_value(self, x):
-        _, _, _, v = self.get_action_and_value(x)
+        _, _, _, v, _ = self.get_action_and_value(x)
         return v
     
     def get_action_and_value(self, x, action=None):
@@ -79,32 +83,27 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
         # embed state
         x = self.conv_seqs(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw"
         
+        x_flat = x.flatten(1)
+        x_flat = nn.functional.relu(x_flat)
+        x_flat = self.hidden_fc(x_flat)
+        x_flat = nn.functional.relu(x_flat)
+        value = self.value_fc(x_flat)
+        
         # expert forward pass
-        x = nn.functional.relu(x)
-        x = self.experts_pol_1(x)
-        x = nn.functional.relu(x)
-        
-        x_val = x.flatten(2).flatten(1)
-        value = self.experts_val(x_val)
-        
-        x = self.experts_pol_2(x)
-        
+        x = self.experts(x)
         x = x.flatten(2)
         logits = x.narrow(1, 0, self.num_outputs)  # N x A X self.num_actors
         weights_logits = x.narrow(1, self.num_outputs, 1)  # N x 1 X self.num_actors
-
-        weights_logits = nn.functional.softmax(weights_logits, dim=2)
+        weights_logits = torch.sigmoid(weights_logits).mul(0.5) # If multiplied by 2, the default weighting is 1. But think we should divide by sqrt(actors), or something just under. Kinda guessing that this might be ok.
 
         # weighted sum
-        logits_weights_detached = logits.mul(weights_logits.detach()).sum(2)
-        logits = logits.mul(weights_logits).sum(2)
-        
-        probs_weights_detached = Categorical(logits=logits_weights_detached)
-        probs = Categorical(logits=logits)
+        final_logits = logits.mul(weights_logits).sum(2)
+
+        probs = Categorical(logits=final_logits)
         if action is None:
             action = probs.sample()
 
-        return action, probs.log_prob(action), probs_weights_detached.entropy(), value
+        return action, probs.log_prob(action), probs.entropy(), value, logits
         
     def count_parameters(self):
         table = PrettyTable(["Modules", "Parameters"])
@@ -161,7 +160,6 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
 #|           value_fc.weight           |    126     |
 #|            value_fc.bias            |     1      |
 #+-------------------------------------+------------+
-#Total Trainable Params: 622533
 
 
 # If value part has 768 latent size:
