@@ -103,8 +103,8 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
         x = x.flatten(2)
         logits = x.narrow(1, 0, self.num_outputs)  # N x A X self.num_actors
         weights_logits = x.narrow(1, self.num_outputs, 1)  # N x 1 X self.num_actors
-        #weights_logits = torch.sigmoid(weights_logits).mul(0.5) # If multiplied by 2, the default weighting is 1. But think we should divide by sqrt(actors), or something just under. Kinda guessing that this might be ok.
-        weights_logits = nn.functional.softmax(weights_logits, dim=2).mul(5.0)
+        weights_logits = torch.sigmoid(weights_logits).mul(0.5) # If multiplied by 2, the default weighting is 1. But think we should divide by sqrt(actors), or something just under. Kinda guessing that this might be ok.
+        #weights_logits = nn.functional.softmax(weights_logits, dim=2).mul(5.0)
 
         # weighted sum
         final_logits = logits.mul(weights_logits).sum(2)
