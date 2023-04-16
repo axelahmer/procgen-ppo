@@ -113,7 +113,10 @@ class MixerAgentSigmoidIndividualEntropy(nn.Module):
         if action is None:
             action = probs.sample()
 
-        return action, probs.log_prob(action), probs.entropy(), value, logits
+        individual_probs = Categorical(logits=logits.mul(weights_logits.detach()).permute(0, 2, 1))
+        entropy_for_loss = individual_probs.entropy().sum(1)
+
+        return action, probs.log_prob(action), probs.entropy(), value, entropy_for_loss
         
     def count_parameters(self):
         table = PrettyTable(["Modules", "Parameters"])

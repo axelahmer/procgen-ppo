@@ -286,9 +286,8 @@ if __name__ == "__main__":
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
 
-                _, newlogprob, entropy_overall, newvalue, logprob_individual = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
-                probs = Categorical(logits=logprob_individual.permute(0, 2, 1))
-                entropy = probs.entropy().mean(dim=1)
+                _, newlogprob, entropy_overall, newvalue, entropy_for_loss = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
+                
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 
@@ -322,7 +321,7 @@ if __name__ == "__main__":
                 else:
                     v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
-                entropy_loss = entropy.mean()
+                entropy_loss = entropy_for_loss.mean()
                 loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
 
                 optimizer.zero_grad()
