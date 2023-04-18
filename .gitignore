@@ -1,4 +1,5 @@
-runs/
+runs*
+
 results/eff/**/
 results/gen/**/
 *.pyc
