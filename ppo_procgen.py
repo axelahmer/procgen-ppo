@@ -18,11 +18,15 @@ from torch.utils.tensorboard import SummaryWriter
 from agents.impala import ImpalaAgent
 from agents.mixer import MixerAgent
 from agents.mixer_flat_val import MixerAgentFlatVal
+from agents.mixer_init import MixerInitAgent
+from agents.mixer_transformer import MixerTransformerAgent
 
 AGENTS = {
     "impala": ImpalaAgent,
     "mixer": MixerAgent,
-    "mixer-flat-val": MixerAgentFlatVal
+    "mixer-init": MixerInitAgent,
+    "mixer-flat-val": MixerAgentFlatVal,
+    "mixer-trans": MixerTransformerAgent,
 }
 
 
