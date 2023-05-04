@@ -64,40 +64,48 @@ class MixerAgentFlatVal(nn.Module):
             conv_seqs.append(conv_seq)
         self.conv_seqs = nn.Sequential(*conv_seqs)
 
-        self.experts = nn.Sequential(
+        self.shared_latent = nn.Sequential(
             nn.ReLU(),
             nn.Conv2d(in_channels=32, out_channels=1024, kernel_size=4, stride=1),
             nn.ReLU(),
-            nn.Conv2d(in_channels=1024, out_channels=self.num_outputs + 3, kernel_size=1, stride=1),
+        )
+
+        self.policy_experts = nn.Conv2d(in_channels=1024, out_channels=self.num_outputs + 1, kernel_size=1, stride=1)
+
+
+        self.value_head = nn.Sequential(
+            # nn.ReLU(),
+            nn.Flatten(),
+            # nn.Linear(in_features=32 * 8 * 8, out_features=128),
+            # nn.ReLU(),
+            nn.Linear(in_features=1024*5*5, out_features=1)
         )
 
     def get_value(self, x):
-        _, _, _, v = self.get_action_and_value(x)
-        return v
+        x = self.conv_seqs(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw"
+        x = self.shared_latent(x)
+        return self.value_head(x)
     
     def get_action_and_value(self, x, action=None):
         
         # embed state
         x = self.conv_seqs(x.permute((0, 3, 1, 2)) / 255.0)  # "bhwc" -> "bchw"
-        x = self.experts(x)
+        x = self.shared_latent(x)
 
         # expert forward pass
-        x = x.flatten(2)
-        logits = x.narrow(1, 0, self.num_outputs)  # N x A X self.num_actors
-        value = x.narrow(1, self.num_outputs, 1)  # N x 1 X self.num_actors
-        weights_logits = x.narrow(1, self.num_outputs + 1, 1)  # N x 1 X self.num_actors
-        weights_value = x.narrow(1, self.num_outputs + 2, 1)  # N x 1 X self.num_actors
+        e = self.policy_experts(x).flatten(2)
+
+        logits = e.narrow(1, 0, self.num_outputs)  # N x A X self.num_actors
+        weights_logits = e.narrow(1, self.num_outputs, 1)  # N x 1 X self.num_actors
 
         # normalize weights
         weights_logits = nn.functional.softmax(weights_logits, dim=2)
-        weights_value = nn.functional.softmax(weights_value, dim=2)
 
         # weighted sum
         logits = logits.mul(weights_logits).sum(2)
-        value = value.mul(weights_value).sum(2)
 
         probs = Categorical(logits=logits)
         if action is None:
             action = probs.sample()
 
-        return action, probs.log_prob(action), probs.entropy(), value
+        return action, probs.log_prob(action), probs.entropy(), self.value_head(x)

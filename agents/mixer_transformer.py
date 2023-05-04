@@ -1,53 +1,10 @@
+from agents.impala import ConvSequence
+from torch.distributions import Categorical
 import torch
 import torch.nn as nn
-from torch.distributions.categorical import Categorical
-import numpy as np
-
-def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
-    torch.nn.init.orthogonal_(layer.weight, std)
-    torch.nn.init.constant_(layer.bias, bias_const)
-    return layer
 
 
-class ResidualBlock(nn.Module):
-    def __init__(self, channels):
-        super().__init__()
-        self.conv0 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, padding=1)
-        self.conv1 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, padding=1)
-
-    def forward(self, x):
-        inputs = x
-        x = nn.functional.relu(x)
-        x = self.conv0(x)
-        x = nn.functional.relu(x)
-        x = self.conv1(x)
-        return x + inputs
-
-
-class ConvSequence(nn.Module):
-    def __init__(self, input_shape, out_channels):
-        super().__init__()
-        self._input_shape = input_shape
-        self._out_channels = out_channels
-        self.conv = nn.Conv2d(in_channels=self._input_shape[0], out_channels=self._out_channels, kernel_size=3, padding=1)
-        self.res_block0 = ResidualBlock(self._out_channels)
-        self.res_block1 = ResidualBlock(self._out_channels)
-
-    def forward(self, x):
-        x = self.conv(x)
-        x = nn.functional.max_pool2d(x, kernel_size=3, stride=2, padding=1)
-        x = self.res_block0(x)
-        x = self.res_block1(x)
-        assert x.shape[1:] == self.get_output_shape()
-        return x
-
-    def get_output_shape(self):
-        _c, h, w = self._input_shape
-        return (self._out_channels, (h + 1) // 2, (w + 1) // 2)
-    
-
-
-class MixerTransformerAgent(nn.Module):
+class TransformerMixer(nn.Module):
     def __init__(self, envs):
         super().__init__()
         self.num_outputs = envs.single_action_space.n
@@ -61,39 +18,59 @@ class MixerTransformerAgent(nn.Module):
             conv_seqs.append(conv_seq)
         self.conv_seqs = nn.Sequential(*conv_seqs)
 
-        emb_size = 64
-        lat_size = 896
-        comb_size = emb_size + lat_size
+        # Hyperparameters for each stream
+        # Common hyperparameters
+        kernel_size = 4
+        stride = 1
+        padding = 0
 
-        self.latent = nn.Conv2d(32, lat_size, stride=1, kernel_size=4)
-        self.emb = nn.Conv2d(32, emb_size, stride=1, kernel_size=4)
+        # Configuration stream
+        conf_emb_size = 512
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model=emb_size, nhead=2, batch_first=True, dim_feedforward=emb_size * 2)
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=2)
+        # Attention stream
+        attn_emb_size = 64
+        attn_num_layers = 2
+        attn_num_heads = 4
+        attn_ff_dim = attn_emb_size * 4
+        attn_dropout = 0
+        attn_bottleneck = 32
 
-        self.policy_head = nn.Linear(comb_size, self.num_outputs)
-        self.policy_weights = nn.Linear(comb_size, 1)
+        # Attention stream with positional encoding
+        attn_pos_emb_size = 64
+        attn_pos_num_layers = 4
+        attn_pos_num_heads = 8
+        attn_pos_ff_dim = attn_pos_emb_size * 4
+        attn_pos_dropout = 0
+        attn_pos_bottleneck = 16
+        ##################
 
-        self.value_head = nn.Linear(comb_size, 1)
-        self.value_weights = nn.Linear(comb_size, 1)
+        total_emb_size = conf_emb_size + attn_pos_bottleneck
 
-        self.lat_norm = nn.LayerNorm(lat_size)  # Add LayerNorm for lat
+        self.conf_embedding = nn.Conv2d(shape[0], conf_emb_size, kernel_size=kernel_size, stride=stride, padding=padding)
+        self.attn_embedding = nn.Conv2d(shape[0], attn_emb_size, kernel_size=kernel_size, stride=stride, padding=padding)
+        self.attn_pos_embedding = nn.Conv2d(shape[0], attn_pos_emb_size, kernel_size=kernel_size, stride=stride, padding=padding)
 
-        # Precompute positional encoding
-        seq_len = (shape[1] - 3) * (shape[2] - 3)
-        self.register_buffer("precomputed_positional_encoding", self.positional_encoding(seq_len, emb_size))
+        num_patches = ((shape[1] - kernel_size + 2 * padding) // stride + 1) * ((shape[2] - kernel_size + 2 * padding) // stride + 1)
+        self.position_embedding = nn.Embedding(num_patches, attn_pos_emb_size)
 
-    def add_positional_encoding(self, x):
-        x = x + self.precomputed_positional_encoding.unsqueeze(0)
-        return x
+        attn_encoder_layer = nn.TransformerEncoderLayer(d_model=attn_emb_size, nhead=attn_num_heads, batch_first=True, dim_feedforward=attn_ff_dim, dropout=attn_dropout, norm_first=True)
+        self.attn_encoder = nn.TransformerEncoder(attn_encoder_layer, num_layers=attn_num_layers)
+        self.attn_bottle = nn.Linear(attn_emb_size, attn_bottleneck)
 
-    def positional_encoding(self, seq_len, d_model):
-        pos = torch.arange(seq_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(torch.log(torch.tensor(10000.0)) / d_model))
-        pe = torch.zeros(seq_len, d_model)
-        pe[:, 0::2] = torch.sin(pos * div_term)
-        pe[:, 1::2] = torch.cos(pos * div_term)
-        return pe
+        attn_pos_encoder_layer = nn.TransformerEncoderLayer(d_model=attn_pos_emb_size, nhead=attn_pos_num_heads, batch_first=True, dim_feedforward=attn_pos_ff_dim, dropout=attn_pos_dropout, norm_first=True)
+        self.attn_pos_encoder = nn.TransformerEncoder(attn_pos_encoder_layer, num_layers=attn_pos_num_layers)
+        self.attn_pos_bottle = nn.Linear(attn_pos_emb_size, attn_pos_bottleneck)
+
+        self.policy_head = nn.Linear(total_emb_size, self.num_outputs)
+        self.policy_weights = nn.Linear(total_emb_size, 1)
+
+        self.value_head = nn.Linear(total_emb_size, 1)
+        self.value_weights = nn.Linear(total_emb_size, 1)
+
+        self.norm = nn.LayerNorm(total_emb_size)
+
+        self.register_buffer("position_ids", torch.arange(num_patches).expand((1, -1)))
+
 
     def get_value(self, x):
         _, _, _, v = self.get_action_and_value(x)
@@ -103,15 +80,29 @@ class MixerTransformerAgent(nn.Module):
         x = self.conv_seqs(x.permute((0, 3, 1, 2)) / 255.0)
         x = nn.functional.relu(x)
 
-        attn = self.emb(x).flatten(2).permute(0, 2, 1)
-        attn = self.add_positional_encoding(attn)
-        attn = self.encoder(attn)
+        # conf stream (B x P x conf_emb_size)
+        conf_emb = self.conf_embedding(x)
+        conf_emb = conf_emb.flatten(2).permute(0, 2, 1)
 
-        lat = self.latent(x).flatten(2).permute(0, 2, 1)
-        lat = self.lat_norm(lat)  # Apply LayerNorm to lat
+        # attn stream (B x P x attn_emb_size)
+        attn_emb = self.attn_embedding(x)
+        attn_emb = attn_emb.flatten(2).permute(0, 2, 1)
+        attn_emb = self.attn_encoder(attn_emb)
+        attn_emb = self.attn_bottle(attn_emb)
 
-        x = torch.cat((lat, attn), dim=2)
+        # attn_pos stream (B x P x attn_pos_emb_size)
+        attn_pos_emb = self.attn_pos_embedding(x)
+        attn_pos_emb = attn_pos_emb.flatten(2).permute(0, 2, 1)
+        attn_pos_emb = attn_pos_emb + self.position_embedding(self.position_ids)
+        attn_pos_emb = self.attn_pos_encoder(attn_pos_emb)
+        attn_pos_emb = self.attn_pos_bottle(attn_pos_emb)
+
+        # Concatenate streams (B x P x total_emb_size)
+        x = torch.cat((conf_emb, attn_pos_emb), dim=-1)
         x = nn.functional.relu(x)
+        # x = self.norm(x)
+        
+        
 
         logits = (self.policy_head(x) * torch.softmax(self.policy_weights(x), dim=1)).sum(dim=1)
         value = (self.value_head(x) * torch.softmax(self.value_weights(x), dim=1)).sum(dim=1)
@@ -121,3 +112,5 @@ class MixerTransformerAgent(nn.Module):
             action = probs.sample()
 
         return action, probs.log_prob(action), probs.entropy(), value
+
+

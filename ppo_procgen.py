@@ -19,14 +19,25 @@ from agents.impala import ImpalaAgent
 from agents.mixer import MixerAgent
 from agents.mixer_flat_val import MixerAgentFlatVal
 from agents.mixer_init import MixerInitAgent
-from agents.mixer_transformer import MixerTransformerAgent
+from agents.mixer_transformer import TransformerMixer
+from agents.transformer import TransformerVanilla
+from agents.trans_single import TransformerSingle
+from agents.trans_double import DoubleTransformer
+from agents.trans_res import ResidualAttention
 
 AGENTS = {
+    # Good Stuff
     "impala": ImpalaAgent,
     "mixer": MixerAgent,
+
+    # Weird Stuff
     "mixer-init": MixerInitAgent,
     "mixer-flat-val": MixerAgentFlatVal,
-    "mixer-trans": MixerTransformerAgent,
+    "mixer-trans": TransformerMixer,
+    "trans-base": TransformerVanilla,
+    "trans-single": TransformerSingle,
+    "trans-double": DoubleTransformer,
+    "trans-res": ResidualAttention,
 }
 
 
@@ -93,6 +104,8 @@ def parse_args():
         help="the number of episodes for evaluation")
     parser.add_argument("--agent", type=str, default="impala",
         help="the agent to use")
+    parser.add_argument("--record-saliency", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
+        help="whether to record saliency maps")
 
     args = parser.parse_args()
     args.batch_size = int(args.num_envs * args.num_steps)
@@ -199,7 +212,7 @@ if __name__ == "__main__":
 
             # ALGO LOGIC: action logic
             with torch.no_grad():
-                action, logprob, _, value = agent.get_action_and_value(next_obs)
+                action, logprob, _, value, _ = agent.get_action_and_value(next_obs)
                 values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
@@ -236,7 +249,7 @@ if __name__ == "__main__":
 
             while len(ep_returns_eval) < args.num_eval_eps:
                 with torch.no_grad():
-                    action, _, _, _ = agent.get_action_and_value(next_obs_eval)
+                    action, _, _, _, _ = agent.get_action_and_value(next_obs_eval)
                 next_obs_eval, reward, done, info = envs_eval.step(action.cpu().numpy())
                 next_obs_eval = torch.Tensor(next_obs_eval).to(device)
                 for item in info:
@@ -289,7 +302,7 @@ if __name__ == "__main__":
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
 
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
+                _, newlogprob, entropy, newvalue, _ = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 
@@ -350,6 +363,18 @@ if __name__ == "__main__":
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
         # print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+
+
+
+    # generate saliency maps for final model
+    from utils import run_saliency_steps, create_env
+    num_steps = 2000
+    saliency_envs = create_env(num_envs=1, env_name=args.env_id, num_levels=1, use_sequential_levels=True, start_level=42, distribution_mode="easy")
+    run_saliency_steps(agent, saliency_envs, num_steps, writer, global_step, device)
+
+    # save weights to writer dir
+    torch.save(agent.state_dict(), os.path.join(writer.log_dir, "weights.pt"))
+
 
     envs.close()
     writer.close()

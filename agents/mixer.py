@@ -70,7 +70,7 @@ class MixerAgent(nn.Module):
         )
 
     def get_value(self, x):
-        _, _, _, v = self.get_action_and_value(x)
+        _, _, _, v, _ = self.get_action_and_value(x)
         return v
     
     def get_action_and_value(self, x, action=None):
@@ -98,4 +98,4 @@ class MixerAgent(nn.Module):
         if action is None:
             action = probs.sample()
 
-        return action, probs.log_prob(action), probs.entropy(), value
+        return action, probs.log_prob(action), probs.entropy(), value, logits
