@@ -25,6 +25,7 @@ class TransformerVanilla(nn.Module):
         num_heads = 2
         ff_dim = emb_size * 4
         dropout = 0
+        norm_first = True
         ##################
 
         self.embedding = nn.Conv2d(shape[0], emb_size, kernel_size=kernel_size, stride=stride)
@@ -33,7 +34,7 @@ class TransformerVanilla(nn.Module):
         # print("num_patches", num_patches)
         self.position_embedding = nn.Embedding(num_patches, emb_size)
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model=emb_size, nhead=num_heads, batch_first=True, dim_feedforward=ff_dim, dropout=dropout, norm_first=False)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=emb_size, nhead=num_heads, batch_first=True, dim_feedforward=ff_dim, dropout=dropout, norm_first=norm_first)
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_encoder_layers)
 
         self.policy_head = nn.Linear(emb_size*num_patches, self.num_outputs)

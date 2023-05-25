@@ -22,19 +22,20 @@ class DoubleTransformer(nn.Module):
         kernel_size = 4
         stride = 1
         padding = 0
-        attn_emb_size = 64
+        attn_emb_size = 96
         base_emb_size = 512
-        num_layers = 1
+        num_layers = 2
         num_heads = 2
-        ff_dim = attn_emb_size * 2
+        ff_dim = attn_emb_size * 4
         dropout = 0
-        shared_linear_size = 256
+        norm_first = True
+        # shared_linear_size = 256
         ##################
 
         self.base_embedding = nn.Conv2d(shape[0], base_emb_size, kernel_size=kernel_size, stride=stride, padding=padding)
         self.attn_embedding = nn.Conv2d(shape[0], attn_emb_size, kernel_size=kernel_size, stride=stride, padding=padding)
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model=attn_emb_size, nhead=num_heads, batch_first=True, dim_feedforward=ff_dim, dropout=dropout, norm_first=False)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=attn_emb_size, nhead=num_heads, batch_first=True, dim_feedforward=ff_dim, dropout=dropout, norm_first=norm_first)
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
         num_patches = ((shape[1] - kernel_size + 2 * padding) // stride + 1) * ((shape[2] - kernel_size + 2 * padding) // stride + 1)
@@ -42,20 +43,20 @@ class DoubleTransformer(nn.Module):
 
         combined_emb_size = attn_emb_size + base_emb_size
 
-        self.shared_linear = nn.Linear(combined_emb_size, shared_linear_size)
+        # self.shared_linear = nn.Linear(combined_emb_size, shared_linear_size)
 
-        self.policy_head = nn.Linear(shared_linear_size, self.num_outputs)
-        self.policy_weights = nn.Linear(shared_linear_size, 1)
+        self.policy_head = nn.Linear(combined_emb_size, self.num_outputs)
+        self.policy_weights = nn.Linear(combined_emb_size, 1)
 
-        self.value_head = nn.Linear(shared_linear_size, 1)
-        self.value_weights = nn.Linear(shared_linear_size, 1)
+        self.value_head = nn.Linear(combined_emb_size, 1)
+        self.value_weights = nn.Linear(combined_emb_size, 1)
 
-        self.norm = nn.LayerNorm(base_emb_size)
+        # self.norm = nn.LayerNorm(base_emb_size)
 
         self.register_buffer("position_ids", torch.arange(num_patches).expand((1, -1)))
 
     def get_value(self, x):
-        _, _, _, v = self.get_action_and_value(x)
+        _, _, _, v, _ = self.get_action_and_value(x)
         return v
 
     def get_action_and_value(self, x, action=None):
@@ -73,12 +74,12 @@ class DoubleTransformer(nn.Module):
         x_attn = self.encoder(x_attn)
 
         # Concatenate streams (B x P x combined_emb_size)
-        x_combined = torch.cat((self.norm(x_base), x_attn), dim=2)
-        x_combined = nn.functional.relu(x_combined)
+        x = torch.cat((x_base, x_attn), dim=2)
+        x = nn.functional.relu(x)
 
         # Shared linear (B x P x shared_linear_size)
-        x = self.shared_linear(x_combined)
-        x = nn.functional.relu(x)
+        # x = self.shared_linear(x_combined)
+        # x = nn.functional.relu(x)
 
         logits = (self.policy_head(x) * torch.softmax(self.policy_weights(x), dim=1)).sum(dim=1)
         value = (self.value_head(x) * torch.softmax(self.value_weights(x), dim=1)).sum(dim=1)
@@ -87,4 +88,4 @@ class DoubleTransformer(nn.Module):
         if action is None:
             action = probs.sample()
 
-        return action, probs.log_prob(action), probs.entropy(), value
+        return action, probs.log_prob(action), probs.entropy(), value, logits
