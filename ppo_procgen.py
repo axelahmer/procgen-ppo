@@ -6,6 +6,7 @@ import random
 import time
 from distutils.util import strtobool
 
+
 import gym
 import numpy as np
 import torch
@@ -14,6 +15,7 @@ import torch.optim as optim
 from procgen import ProcgenEnv
 from torch.distributions.categorical import Categorical
 from torch.utils.tensorboard import SummaryWriter
+from utils import run_saliency_steps, create_env
 
 from agents.impala import ImpalaAgent
 from agents.mixer import MixerAgent
@@ -267,6 +269,14 @@ if __name__ == "__main__":
             # print eval stats in blue
             eval_str = f"{args.env_id:<10} (seed={args.seed:^1} gpu={args.gpu_id:^1}) | step: {global_step:^10,d} | episodic return: {mean_return_eval:6.2f} +/- {std_return_eval:<6.2f} | episodic length: {mean_length_eval:6.2f} +/- {std_length_eval:<6.2f}"
             print("\033[94m" + eval_str + "\033[0m")
+        
+        # save saliency map videos if desired - should be done 4 times during num_updates
+        if args.record_saliency and update % (num_updates // 4) == 0:
+            num_steps = 400
+            train_envs = create_env(num_envs=1, env_name=args.env_id, num_levels=200, use_sequential_levels=False, start_level=0, distribution_mode="easy")
+            run_saliency_steps(agent, train_envs, num_steps, writer, global_step, device, 'train')
+            test_envs = create_env(num_envs=1, env_name=args.env_id, num_levels=0, use_sequential_levels=False, start_level=0, distribution_mode="easy")
+            run_saliency_steps(agent, test_envs, num_steps, writer, global_step, device, 'test')
 
 
         # bootstrap value if not done
@@ -366,11 +376,12 @@ if __name__ == "__main__":
 
 
 
-    # generate saliency maps for final model
-    from utils import run_saliency_steps, create_env
-    num_steps = 2000
-    saliency_envs = create_env(num_envs=1, env_name=args.env_id, num_levels=1, use_sequential_levels=True, start_level=42, distribution_mode="easy")
-    run_saliency_steps(agent, saliency_envs, num_steps, writer, global_step, device)
+    # generate saliency maps for final model and on same level
+    num_steps = 3000
+    train_envs = create_env(num_envs=1, env_name=args.env_id, num_levels=1, use_sequential_levels=True, start_level=0, distribution_mode="easy")
+    run_saliency_steps(agent, train_envs, num_steps, writer, global_step, device, 'train-final-seq')
+    test_envs = create_env(num_envs=1, env_name=args.env_id, num_levels=1, use_sequential_levels=True, start_level=200, distribution_mode="easy")
+    run_saliency_steps(agent, test_envs, num_steps, writer, global_step, device, 'test-final-seq')
 
     # save weights to writer dir
     torch.save(agent.state_dict(), os.path.join(writer.log_dir, "weights.pt"))

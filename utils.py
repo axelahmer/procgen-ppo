@@ -10,6 +10,7 @@ from agents.mixer import MixerAgent
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import imageio
+import cv2
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
@@ -42,6 +43,18 @@ def compute_saliency_maps(agent, envs, obs):
 
     saliency_map_policy = torch.stack(saliency_maps_policy).sum(0).abs()
 
+
+    #### testing
+    # expected = 1/(64*64*3)
+    # print(f'expected value of saliency map: {expected}')
+    # test_map = torch.ones_like(saliency_map_policy)
+    # test_map_softmax = torch.nn.functional.softmax(test_map.flatten(), dim=-1)
+    # print('first two values of test map softmax: ', test_map_softmax[:2])
+    # print(f'shape of test map softmax: {test_map_softmax.shape}')
+    # test_map_entropy = -(test_map_softmax * torch.log(test_map_softmax)).sum()
+    # print(f'Entropy of test map: {test_map_entropy}')
+    #######
+
     # Value saliency map
     grad_value = torch.autograd.grad(value.sum(), obs, create_graph=True)[0]
     saliency_map_value = grad_value.abs()
@@ -61,12 +74,10 @@ def compute_saliency_maps(agent, envs, obs):
     return saliency_map_policy.squeeze().detach().cpu().numpy(), saliency_map_value.squeeze().detach().cpu().numpy(), entropy_policy, entropy_value
 
 
-import cv2
-import numpy as np
-
 def overlay_heatmap_on_observation(observation, heatmap):
     # Increase size of observation with no interpolation or smoothing
-    observation = cv2.resize(observation, (0, 0), fx=8, fy=8, interpolation=cv2.INTER_NEAREST) # 64x64x3 -> 512x512x3
+    scale = 4
+    observation = cv2.resize(observation, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST) # 64x64x3 -> 512x512x3
 
     # make obs grey
     observation = cv2.cvtColor(observation, cv2.COLOR_RGB2GRAY)
@@ -83,18 +94,18 @@ def overlay_heatmap_on_observation(observation, heatmap):
     heatmap_normalized = cv2.cvtColor(heatmap_normalized, cv2.COLOR_BGR2RGB)
 
     # Increase size of heatmap with no interpolation or smoothing
-    heatmap_normalized = cv2.resize(heatmap_normalized, (0, 0), fx=8, fy=8, interpolation=cv2.INTER_NEAREST) # 64x64x3 -> 512x512x3
+    heatmap_normalized = cv2.resize(heatmap_normalized, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST) # 64x64x3 -> 512x512x3
 
     # smooth heatmap for 8 pixels
-    heatmap_normalized = cv2.blur(heatmap_normalized, (12,12))
+    heatmap_normalized = cv2.blur(heatmap_normalized, (8,8))
 
     blended_image = (observation * 0.5 + heatmap_normalized * 0.5).astype(np.uint8)
 
     return blended_image
 
 
-def run_saliency_steps(agent, envs, num_steps, writer:SummaryWriter, global_step, device):
-    print
+def run_saliency_steps(agent, envs, num_steps, writer:SummaryWriter, global_step, device, exp_name):
+    print('Running saliency steps')
     obs = envs.reset()
     step_count = 0
 
@@ -125,23 +136,25 @@ def run_saliency_steps(agent, envs, num_steps, writer:SummaryWriter, global_step
 
     avg_entropy_policy = np.mean(entropies_policy)
     avg_entropy_value = np.mean(entropies_value)
-    writer.add_scalar('entropy_policy', avg_entropy_policy, global_step)
-    writer.add_scalar('entropy_value', avg_entropy_value, global_step)
+    writer.add_scalar(f'charts/saliency_entropy_policy_{exp_name}', avg_entropy_policy, global_step)
+    writer.add_scalar(f'charts/saliency_entropy_value_{exp_name}', avg_entropy_value, global_step)
 
-    print(f'avg_entropy_policy: {avg_entropy_policy}, avg_entropy_value: {avg_entropy_value}')
+    # print(f'avg_entropy_policy: {avg_entropy_policy}, avg_entropy_value: {avg_entropy_value}')
 
     for name, frames in video_frames.items():
         video_array = np.stack(frames, axis=0).astype(np.uint8)
         path = writer.file_writer.get_logdir()
 
         # Save video to file
-        with imageio.get_writer(f'{path}/{name}_video_{global_step}.mp4', fps=15) as file_writer:
+        with imageio.get_writer(f'{path}/{name}_video_{exp_name}_{global_step}.mp4', fps=15) as file_writer:
             for frame in video_array:
                 file_writer.append_data(frame)
 
         # Add video to TensorBoard
         video_array_tb = torch.tensor(video_array.clip(0,255),dtype=torch.uint8).permute(0, 3, 1, 2).unsqueeze(0).numpy()
-        writer.add_video(f'{name}/video', video_array_tb, global_step=global_step, fps=15)
+        writer.add_video(f'{name}/video_{exp_name}', video_array_tb, global_step=global_step, fps=15)
+    
+    print('Done running saliency steps')
 
 
 
@@ -150,7 +163,7 @@ if __name__ == '__main__':
     envs = create_env(num_envs=1, env_name='bigfish', num_levels=1, use_sequential_levels=True, start_level=42, distribution_mode="easy")
     agent = MixerAgent(envs)
 
-    writer = SummaryWriter(log_dir='saliency_map_tests/a')
+    writer = SummaryWriter(log_dir='saliency_map_tests/z')
 
-    run_saliency_steps(agent, envs, num_steps=40, writer=writer, global_step=202)
+    run_saliency_steps(agent, envs, num_steps=100, writer=writer, global_step=202, device='cpu', exp_name='testname')
 

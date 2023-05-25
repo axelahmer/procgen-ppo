@@ -20,7 +20,7 @@ class TransformerVanilla(nn.Module):
         # Hyperparameters
         emb_size = 128
         kernel_size = 4
-        stride = 2
+        stride = 1
         num_encoder_layers = 2
         num_heads = 2
         ff_dim = emb_size * 4
@@ -30,7 +30,7 @@ class TransformerVanilla(nn.Module):
         self.embedding = nn.Conv2d(shape[0], emb_size, kernel_size=kernel_size, stride=stride)
         # calc num_patches using kernel size and stride
         num_patches = ((shape[1] - kernel_size) // stride + 1) * ((shape[2] - kernel_size) // stride + 1)
-        print("num_patches", num_patches)
+        # print("num_patches", num_patches)
         self.position_embedding = nn.Embedding(num_patches, emb_size)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=emb_size, nhead=num_heads, batch_first=True, dim_feedforward=ff_dim, dropout=dropout, norm_first=False)
@@ -42,7 +42,7 @@ class TransformerVanilla(nn.Module):
         self.register_buffer("position_ids", torch.arange(num_patches).expand((1, -1)))
 
     def get_value(self, x):
-        _, _, _, v = self.get_action_and_value(x)
+        _, _, _, v, _ = self.get_action_and_value(x)
         return v
 
     def get_action_and_value(self, x, action=None):
@@ -64,4 +64,4 @@ class TransformerVanilla(nn.Module):
         if action is None:
             action = probs.sample()
 
-        return action, probs.log_prob(action), probs.entropy(), value
+        return action, probs.log_prob(action), probs.entropy(), value, logits
