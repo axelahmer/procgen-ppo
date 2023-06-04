@@ -6,3 +6,4 @@ results/gen/**/
 *.zip
 tests
 recordings
+*.mp4

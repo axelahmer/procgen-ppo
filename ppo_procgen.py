@@ -106,7 +106,7 @@ def parse_args():
         help="the number of episodes for evaluation")
     parser.add_argument("--agent", type=str, default="impala",
         help="the agent to use")
-    parser.add_argument("--record-saliency", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
+    parser.add_argument("--record-saliency", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="whether to record saliency maps")
 
     args = parser.parse_args()
@@ -121,6 +121,8 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
+    # print record_saliency
+    print(f"record_saliency: {args.record_saliency}")
 
     run_name = f"{args.env_id}_{args.exp_name}_agent={args.agent}_seed={args.seed}_time={int(time.time())}"
     if args.track:
@@ -377,11 +379,12 @@ if __name__ == "__main__":
 
 
     # generate saliency maps for final model and on same level
-    num_steps = 3000
-    train_envs = create_env(num_envs=1, env_name=args.env_id, num_levels=1, use_sequential_levels=True, start_level=0, distribution_mode="easy")
-    run_saliency_steps(agent, train_envs, num_steps, writer, global_step, device, 'train-final-seq')
-    test_envs = create_env(num_envs=1, env_name=args.env_id, num_levels=1, use_sequential_levels=True, start_level=200, distribution_mode="easy")
-    run_saliency_steps(agent, test_envs, num_steps, writer, global_step, device, 'test-final-seq')
+    if args.record_saliency:
+        num_steps = 3000
+        train_envs = create_env(num_envs=1, env_name=args.env_id, num_levels=1, use_sequential_levels=True, start_level=0, distribution_mode="easy")
+        run_saliency_steps(agent, train_envs, num_steps, writer, global_step, device, 'train-final-seq')
+        test_envs = create_env(num_envs=1, env_name=args.env_id, num_levels=1, use_sequential_levels=True, start_level=200, distribution_mode="easy")
+        run_saliency_steps(agent, test_envs, num_steps, writer, global_step, device, 'test-final-seq')
 
     # save weights to writer dir
     torch.save(agent.state_dict(), os.path.join(writer.log_dir, "weights.pt"))
